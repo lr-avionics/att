@@ -1,0 +1,59 @@
+name: 同步Gitee上游模块
+# 支持手动传入模式参数：sync_mode=increment/force
+on:
+  schedule:
+    - cron: '0 3 * * *' # UTC 03:00 = 北京时间11点每日增量同步
+  workflow_dispatch:
+    inputs:
+      sync_mode:
+        description: 同步模式 increment增量 / force强制镜像
+        default: increment
+        required: true
+
+# 授予代码写入权限，解决git push 403
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      SYNC_MODE: ${{ github.event.inputs.sync_mode }}
+    steps:
+      - name: 检出GitHub完整main分支代码
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 配置Git机器人提交身份
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: 拉取Gitee远程代码（区分增量/强制）
+        id: sync_step
+        run: |
+          GITEE_URL="https://${{ secrets.GITEE_USERNAME }}:${{ secrets.GITEE_TOKEN }}@gitee.com/lr-avionics/test.git"
+          # 清理旧远程避免重复添加
+          git remote remove gitee-upstream 2>/dev/null || true
+          git remote add gitee-upstream "$GITEE_URL"
+          git fetch gitee-upstream --tags
+          if [[ "$SYNC_MODE" == "force" ]]; then
+            echo "===== 执行强制镜像同步 ====="
+            # 强制镜像：完全覆盖本地main，对齐Gitee master
+            git reset --hard gitee-upstream/master
+            git clean -fd
+            echo "has_update=true" >> $GITHUB_OUTPUT
+          else
+            echo "===== 执行增量合并同步 ====="
+            # 增量合并：允许无关联仓库历史、压缩提交
+            if git merge gitee-upstream/master --allow-unrelated-histories --squash -m "sync: 增量同步Gitee最新代码"; then
+              echo "has_update=true" >> $GITHUB_OUTPUT
+            else
+              echo "Gitee无新更新，跳过推送"
+              echo "has_update=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+      - name: 仅存在更新时推送到GitHub main分支
+        if: steps.sync_step.outputs.has_update == 'true'
+        run: git push --force-with-lease origin main
