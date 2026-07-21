@@ -28,7 +28,7 @@ jobs:
         run: |
           GITEE_URL="https://${{ secrets.GITEE_USERNAME }}:${{ secrets.GITEE_TOKEN }}@gitee.com/lr-avionics/test.git"
           # 正确subtree语法，绑定dd子目录
-          if git subtree pull --prefix=dd "$GITEE_URL" master --squash -m "sync: 同步Gitee模块最新代码"; then
+          if git subtree pull --prefix=dd "$GITEE_URL" main --squash -m "sync: 同步Gitee模块最新代码"; then
             echo "has_update=true" >> $GITHUB_OUTPUT
           else
             echo "Gitee无新更新，跳过推送"
